@@ -1,0 +1,133 @@
+Student Testing Report
+                                                        
+* –  Provide a description of the feature of the buffer cache your test case is supposed to test.
+* * –  Provide an overview of how the mechanics of your test case work, as well as a qualitative description of the expected output. If you added any new syscalls to support your test case, you should tell us about those as well.
+
+
+The first test implements second test in the project spec: Test our buffer cache’s ability to coalesce writes to the same sector. We write a 65560-byte file byte to byte and read the write count from block device, and get write counts from block device before and after the write, to see if that falls in the valid range around 128.
+
+
+The second test implements first test in the project spec: Test our buffer cache’s ability to cache disk data. We read the same file twice, and measure the read count from both reads by taking a difference of the read count before and after the read. If cache works properly, the second read count difference should be 0.
+* * –  Provide the output of your own Pintos kernel when you run the test case. Please copy the full raw output file from filesys/build/tests/filesys/extended/student-test-1.output as
+well as the raw results from filesys/build/tests/filesys/extended/student-test-1.result.
+
+
+Raw Outputs from Student Tests:
+student-test-1.output:
+
+Copying tests/filesys/extended/student-test-1 to scratch partition...
+Copying tests/filesys/extended/tar to scratch partition...
+qemu -hda /tmp/jx41bkiWqN.dsk -hdb tmp.dsk -m 4 -net none -nographic -monitor null
+PiLo hda1
+Loading...........
+Kernel command line: -q -f extract run student-test-1
+Pintos booting with 4,088 kB RAM...
+382 pages available in kernel pool.
+382 pages available in user pool.
+Calibrating timer...  288,768,000 loops/s.
+hda: 1,008 sectors (504 kB), model "QM00001", serial "QEMU HARDDISK"
+hda1: 185 sectors (92 kB), Pintos OS kernel (20)
+hda2: 239 sectors (119 kB), Pintos scratch (22)
+hdb: 5,040 sectors (2 MB), model "QM00002", serial "QEMU HARDDISK"
+hdb1: 4,096 sectors (2 MB), Pintos file system (21)
+filesys: using hdb1
+scratch: using hda2
+Formatting file system...done.
+Boot complete.
+Extracting ustar archive from scratch device into file system...
+Putting 'student-test-1' into the file system...
+Putting 'tar' into the file system...
+Erasing ustar archive...
+Executing 'student-test-1':
+(student-test-1) begin
+(student-test-1) create "testfile"
+(student-test-1) open "testfile"
+(student-test-1) writing "testfile"
+(student-test-1) open "testfile" for verification
+(student-test-1) disk writes upper range correct
+(student-test-1) disk writes lower range correct
+(student-test-1) end
+student-test-1: exit(0)
+Execution of 'student-test-1' complete.
+Timer: 586 ticks
+Thread: 0 idle ticks, 80 kernel ticks, 506 user ticks
+hdb1 (filesys): 1074 reads, 908 writes
+hda2 (scratch): 238 reads, 2 writes
+Console: 1285 characters output
+Keyboard: 0 keys pressed
+Exception: 0 page faults
+Powering off...
+
+student-test-1.result:
+PASS
+
+student-test-2.output:
+
+Copying tests/filesys/extended/student-test-2 to scratch partition...
+Copying tests/filesys/extended/tar to scratch partition...
+qemu -hda /tmp/cpuMkNh6wi.dsk -hdb tmp.dsk -m 4 -net none -nographic -monitor null
+PiLo hda1
+Loading...........
+Kernel command line: -q -f extract run student-test-2
+Pintos booting with 4,088 kB RAM...
+382 pages available in kernel pool.
+382 pages available in user pool.
+Calibrating timer...  209,510,400 loops/s.
+hda: 1,008 sectors (504 kB), model "QM00001", serial "QEMU HARDDISK"
+hda1: 185 sectors (92 kB), Pintos OS kernel (20)
+hda2: 242 sectors (121 kB), Pintos scratch (22)
+hdb: 5,040 sectors (2 MB), model "QM00002", serial "QEMU HARDDISK"
+hdb1: 4,096 sectors (2 MB), Pintos file system (21)
+filesys: using hdb1
+scratch: using hda2
+Formatting file system...done.
+Boot complete.
+Extracting ustar archive from scratch device into file system...
+Putting 'student-test-2' into the file system...
+Putting 'tar' into the file system...
+Erasing ustar archive...
+Executing 'student-test-2':
+(student-test-2) begin
+(student-test-2) create "testfile"
+(student-test-2) open "testfile"
+(student-test-2) writing "testfile"
+(student-test-2) close "testfile"
+(student-test-2) reset cache
+(student-test-2) open "testfile"
+(student-test-2) reading "testfile"
+(student-test-2) close "testfile"
+(student-test-2) open "testfile"
+(student-test-2) reading "testfile" 2nd time
+(student-test-2) close "testfile"
+(student-test-2) first time read caused 51 disk reads
+(student-test-2) second time read caused 0 disk reads
+(student-test-2) cache hit rate improved in the second read
+(student-test-2) end
+student-test-2: exit(0)
+Execution of 'student-test-2' complete.
+Timer: 80 ticks
+Thread: 1 idle ticks, 70 kernel ticks, 9 user ticks
+hdb1 (filesys): 740 reads, 654 writes
+hda2 (scratch): 241 reads, 2 writes
+Console: 1579 characters output
+Keyboard: 0 keys pressed
+Exception: 0 page faults
+Powering off...
+
+student-test-2.result:
+PASS
+
+
+* –  Identify two non-trivial potential kernel bugs, and explain how they would have a↵ected your output of this test case. You should express these in this form: “If your kernel did X instead of Y, then the test case would output Z instead.”. You should identify two di↵erent bugs per test case, but you can use the same bug for both of your 2 test cases. These bugs should be related to your test case (e.g. “If your kernel had a syntax error, then this test case would not run.” does not count). 
+
+
+If our kernel did not perfectly implement LRU in buffer cache, both tests would output much larger read/write counts. we have mis-implemented LRU list of cache blocks, that we do not move most recently accessed cache block to the top of the list. Therefore, when the last block is evicted and new data is brought in to take place, it will immediately be replaced at next eviction, making it a “MRU” list. In this way cache does not “cache” any disk sector, all r/w would have to go to disk. Test 1 would have failed because read and write count would be much more than 128, and test 2 would have failed because file is not cached on second read. 
+
+
+If our kernel did no synchronization on filesys and directory, both test cases would have output much larger read/write counts for traversing from root directory and locate the file/creating duplicates, instead of realizing it in the buffer cache and access them using sector index.
+
+
+                                
+Tell us about your experience writing tests for Pintos. What can be improved about the Pintos testing system? (There’s a lot of room for improvement.) What did you learn from writing test cases? 
+*                                                 
+Writing tests give us a chance to program at the standpoint of a user, using the many features we implement, and a good intuition how each of them affect the validity and performance of the whole file system. The testing system boots pintos once for every tests, which cannot detect trivial memory leaks, unfreed resources, unclosed files etc. Also the external tests cannot peek inside the code and target directly on buffer cache, therefore there is no way of knowing whether it functions perfectly, except being slow.

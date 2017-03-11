@@ -1,0 +1,46 @@
+Group 28 Final Report Project 2		 				
+-------------------------------------------------------------------------------------------------------------------------
+		
+Part I: (Changes to the initial design doc? Discussion with TA?)
+
+Change 1: add a new field to the struct thread: struct file* exe 
+	This field is used to track the executable file of a process. We need to deny writes to files in use as executable and 
+	re-enable writes when we close the file. We missed the part 5.4: Denying Writes to Executables on the spec and did not 
+	have this field initially.
+
+Change 2: When setting up stack in argument passing, initially we planned to do all the calculation first to see whether 
+  the memory needed is smaller than a page and push arguments onto the stack only when it is true. Later we found the code 
+  was kinda long for this method and we just push arguments directly onto the stack and check as we push. 
+
+-------------------------------------------------------------------------------------------------------------------------
+
+Part II: (What did each member do? Good and to be improved? )
+(First name sorted alphabetically)
+
+Chuchu Zhang: Designed argument passing and file descriptor in the design doc; wrote code of argument passing and syscall; 
+              debugged argument passing, syscall and file descriptor; final report write up.
+
+Chuhan Zhang: Design struct wait_status and thread for process syscall part; design process_wait and process_exit and help 
+              edit synchronization of child and parent processes; wrote code of syscall methods and file operation syscalls; 
+              in all discussion and debug with all members; handled style check and submissions.
+
+Shu Li: Answered the Preliminary Questions on the design doc; Checked all the other answers for correctness and pointed out 
+        mistakes to my teammates; Implemented execute and exit syscalls, deny write, and filesys synchronization; 
+        Debugged syscalls.
+
+Yichao Shen: Design locks and buffers to achieve parent waiting mechanics for syscall exec and wait, create struct wait_status 
+             to store load status (success/failure) and exit code while maintaining synchronization to avoid race conditions 
+             by manipulating locks and semaphores. Implement most syscall actions dispatched by syscall_handler. Participate 
+             in discussions of page fault handling, memory R/W and pointer address validation. Debug and style check.
+
+What we did well: 
+We started earlier than we did in proj1 and spent much time considering the details of implementations while designing data 
+structures. We became more efficient during discussions to ensure every member understands what others are doing and is able 
+to contribute thoughts and ideas. We modularised the project and implemented from bottom up, which made it easier to understand 
+and debug. We discovered and fixed a potential synchronization problem which, although not detected by autograder tests, did 
+cause sync-read and sync-writes to fail in rare cases. The overall process was very motivative and the team was very cooperative.
+
+What we need to improve: 
+We did not split the work strictly to allow parallel progresses during this project. Although it might cause more trouble to 
+debug, it will significantly shorten the overall time taken. We were hesitant on some of the choices of implementation and 
+grammar semantics, some of which we could prepare better next time in our design.   

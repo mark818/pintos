@@ -1,0 +1,34 @@
+CS162 Proj3 File Systems
+Part I: (Changes to the initial design doc? Discussion with TA?)
+Change 1: The cache_lock in cache.h is replaced with a reader/writer lock (monitor) that manages shared accesses of reading and writing the block against exclusive accesses of evictions and in-block updates. Periodic flush and write behind is not implemented due to time pressure. 
+Change 2: in inode.h, we add a new struct to represent indirect block
+struct indirect_block {
+  // block_sector_t of this indirect block
+  block_sector_t block;
+  //0 for singly indirect, 1 for doubly    indirect, etc.
+  uint32_t indirection_level;
+  // sectors numbers of the blocks this indirect_block points to
+  block_sector_t block_pointers[126];
+};
+Also, in inode_disk, we add a bool is_dir to indicate whether a disk inode is a directory.
+In inode, we change the int type to  a bool is_dir to indicate whether an inode is a directory and also add a inode_lock to protect open_cnt, removed, deny_write_cnt.
+Change 3: Directory lock is moved to struct inode because struct dir is copied on every access whilst inode is unique with inumber, thus easier to control access rights. In addition, directory entry no longer holds a lock because inode already enforces synchronization. It is managed through inode.
+
+
+Part II: (What did each member do? Good and to be improved? ) (First name sorted alphabetically)
+Chuchu Zhang: Implement inode.c. Modify filesys.c and syscall.c. Debug buffer cache, inode.c, filesys.c and syscall.c
+
+
+Chuhan Zhang: Implement filesys.c; add cwd (init and inheritance); In discussion of buffer cache and file directory implementation and debug directory.c, filesys.c and syscall.c;
+
+
+Shu Li: Implement inode.c, syscall.c, directory.c and filesys.c. Debug everything.
+
+
+Yichao Shen: Implement buffer cache, apply reader/writer lock and in-place update and eviction mechanism. Modify directory.c, add lock to struct. Modify filesys.c, reimplement filesys_open and filesys_create, add filesys_mkdir with subdirectory traversals. Add new syscalls in syscall.c. Debug buffer cache, directory.c and filesys.c. 
+
+
+What is good about this project: We have a very detailed and workable design doc and have discussed the validity of implementations with TA. We use the bottom-up approach: first build buffer cache, then implement inode on top. Any changes required in buffer cache can be quickly discovered and applied before it is buried deep down by upper layers. When stuck on bugs, we consider possibilities of memory corruption (double free) and lack of synchronizations and carefully reread the spec, making us able to locate trivial edge cases effectively. In general, this project is a great test and practice of both understanding of class material and knowledge of minutiae of c-programming language. (Glad we made it)
+
+
+To be improved: Pay more attention to synchronization at each module, rather than debugging them after all layers complete. Understand some x86 assembly might be helpful during debugging. Track and pin down memory that are malloc’ed and freed in different functions.

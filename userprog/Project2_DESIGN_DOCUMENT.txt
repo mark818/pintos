@@ -1,0 +1,224 @@
+CS 162
+Project 2: User Programs
+Design Document
+
+
+Fill in the following information:
+
+GSI: 
+Group Number: 28
+Shu Li           shuli1995@berkeley.edu
+Yichao Shen      mark.shen@berkeley.edu  
+Chuchu Zhang     chuchuzoe@berkeley.edu
+Chuhan Zhang     chz.cookie@berkeley.edu
+
+
+Preliminary Questions
+=====================
+
+1)  Please write down any miscellaneous comments or notes for your GSI.
+
+
+2)  Currently, process_wait tries to decrement a semaphore called temporary.  Explain why this implementation of process_wait wouldn’t work if the exec system call were implemented.
+
+
+In the current implementation, process_wait and process_execute are using the same semaphore, temporary. process_execute will be used in exec() syscall. If exec() syscall is called multiple times, process_execute will create multiple threads. These threads will wake up at different times. When the first child wakes up, it will sema up temporary and process_wait will wake up. In other words, process_wait only waits for the first child woken up instead of the child with a designated tid.  
+
+3)  Briefly describe how the syscall interface works.  How does the operating system obtain the syscall arguments passed from userspace?
+
+
+ In Pintos, user programs invoke int $0x30 to make a system call. The system call number and any additional arguments are expected to be pushed on the stack in the normal fashion before invoking the interrupt (see section 80x86 Calling Convention). Thus, when the system call handler syscall_handler() gets control, the system call number is in the 32-bit word at the caller’s stack pointer, the first argument is in the 32-bit word at the next higher address, and so on. The caller’s stack pointer is accessible to syscall_handler() as the esp member of the struct intr_frame passed to it. (struct intr_frame is on the kernel stack.) The 80x86 convention for function return values is to place them in the EAX register. System calls that return a value can do so by modifying the eax member of struct intr_frame.
+
+
+4)  In filesys.c, you’ll see various filesystem functions that work on struct file objects.  In all modern operating systems, these filesystems operations are abstracted away from userspace code; why would it be a bad idea to expose these operations to users?
+
+
+It’s a bad idea because in that case the kernel cannot control what the user does to the files. It’s better to have this layer of abstraction so that the kernel can check whether user has the proper privilege to open/delete/write to the files. It’s also useful when we want to change the underlying file system implementation, the change would not affect user code at all because of the abstraction.
+
+
+5)  Run pintos --gdb -v -k --qemu --filesys-size=2 -p tests/userprog/iloveos -a iloveos -- -q -f run iloveos, and use GDB to print the address of the priority field of idle thread.  Do this again; does the address of the priority field change?  We expect you to be able to use GDB comfortably throughout this project; if you’re struggling with this, we strongly encourage you to come to office hours.
+
+The priority field does not change. The address is 0xc010401c.
+
+
+Process Syscalls
+================
+
+6)  Copy here the declaration of each new or changed `struct' or `struct' member, global or static variable, `typedef', or enumeration for implementing halt, exec, exit, and wait.  Briefly identify the purpose of each.
+
+
+In threads/thread.h:
+
+struct thread {
+	/* This process’s completion state.*/
+struct wait_status *wait_status; 
+
+/* Completion status of children. */
+struct list wait_status_list;         
+}
+
+struct wait_status {
+struct semaphore wait_exec;   /* Used to signal parent about the           
+                              load result*/
+int child_load_status;        /* 0=new executable loading     
+                              success, 1=load status failure. */
+	struct list_elem child;       /* ‘children’ list element. */
+	struct semaphore parent_wait; /* 1=child exit, 0=child still executing. */
+	int exit_status;			   /* Child exit code. */
+tid_t tid; 			   /* Child thread id. */ 
+	int ref_count;	              /* 2=child and parent both alive,  1=either child or parent alive, 0=child and parent both dead. */
+	struct lock ref_lock;         /* Prevent race condition on      ref_count. */
+}
+
+7)  Briefly describe your planned implementation of the "wait" system call and how it interacts with process termination.
+
+
+The wait is implemented in function process_wait() in src/userprog/process.c. 
+
+Pseudocode:
+process_wait(int child_id){
+--iterate through the list children(which is wait_status_list in implementation) and find which child it’s waiting
+--if didn’t find the child’s tid matches the tid argument 
+----return error
+--else
+----wait for the child by sema_down parent_wait in struct wait_status
+-------time for waiting before wake-up-----------------------------
+----get exit_status from struct wait_status
+----decrement the ref_count of the child in struct wait_status
+----remove the child element in the list children of the parent thread
+----free the memory of the struct wait_status
+}
+
+
+process_exit() {
+--save the exit_status in shared struct wait_status
+--sema_up the parent_wait in wait_status
+--acquire the ref_lock
+--decrement the ref_count in wait_status
+--if ref_count is 0 which means parent is also dead now
+----free the wait_status
+--release the ref_lock
+--iterate through the list of children, wait_status_list, and as in the previous step, use the ref_lock and decrement the ref_count. Then free them if the child is also dead
+--free struct thread
+--free thread’s memory and terminate
+}
+
+
+8)  The "exec" system call returns -1 if loading the new executable fails, so it cannot return before the new executable has completed loading.  How will your code ensure this?  How will the load success/failure status be passed back to the thread that calls "exec"?
+
+A semaphore and an int is implemented to achieve this feature.
+There are 2 possible results to return during an exec call.
+
+1: Error occured during thread_create(), in which case the error is returned immediately to the parent thread without invoking start_process().
+
+2: thread_create() successfully finished, and we do sema_down right after that. Now thread_create() should have invoked start_process(), in which we design to put the load status in the struct field child_load_status in wait_status after load() returns and then sema_up.
+
+
+9)  Consider parent process P with child process C.  How do you ensure proper synchronization and avoid race conditions when P calls wait(C) before C exits?  After C exits?  How do you ensure that all resources are freed in each case?  How about when P terminates without waiting, before C exits?  After C exits?  Are there any special cases?
+
+We implement those by using a semaphore and reference counting. First, in struct thread we implement a list of struct wait_status, wait_status_list, each node of which stores the exit_status of a child thread, as well as a semaphore and a reference count initially set to 2. Whenever parent thread wants to check for exit_status (by calling wait) or child thread exist, we do sema_down to enter critical section, read/modify the ref_count, and then sema_up. 
+
+Since we store exit_status in a separate list of structs, struct thread is freed immediately after a thread exits, at the same time, it decreases reference count in its own struct wait_status and that of all children by 1. 
+
+If parent exits first with waiting or without, it both acquires C’s ref_lock, and C’s struct wait_status->ref_count decrements to 1, then release ref_lock. (P does that to his own wait_status with the same sequence of operations.) If parent didn’t not waited yet, C will become an orphan process and continue to run. When C exits, it decrements its own wait_status->ref_count by 1 with ref_lock protection, which is equal to 0 now. Since any update to wait_status->exit_status cannot be read by anyone, we simply free wait_status when ref_count equals to 0.
+
+If parent exits first without calling wait
+
+If child exits first with or without parents waiting, C updates the wait_status->exit_status, decrements wait_stauts->ref_count by 1 and exits. If there is waiting, parent will be woken up and proceed to get the exit_status; If there is no waiting yet, wait_status struct is available for parent to get exit_status still. Now P terminates afterwards, acquire ref_lock of C and decrement its wait_status->ref_count to 0, then free the wait_status of C, then release the ref_lock. Similarly P does the same decrement and update wait_status->exit_status with ref_lock to its own wait_status, however not affected by C in this case.
+
+All cases should be covered by the design.
+
+10)  How are you planning to implement reading/writing user memory from the kernel and why did you decide to implement it in this way? 
+
+
+User arguments are accessible via esp register. For any pointers the user code passes to syscall, they are verified to be pointing to a valid page, and then dereferenced to perform subsequent actions. Any locks and memory acquired during the process is freed after completion.
+
+
+
+
+Argument Passing
+================
+
+11)  Copy here the declaration of each new or changed `struct' or `struct' member, global or static variable, `typedef', or enumeration for argument passing.  Briefly identify the purpose of each.  
+
+
+No new struct members and variables.
+Need to change the function header in process.c
+setup_stack (int argc, int argv_size, const char **argvs, void **esp) 
+
+12)  Briefly describe your planned implementation for argument parsing.  How do you arrange for the elements of argv[] to be in the right order?  How do you avoid overflowing the stack page?
+
+Argument tokenizing is done in load and stack pushing is implemented in setup_stack. process_execute will call start_process; start_process will call load and load will call setup_stack. We will tokenize the cmd line in load because load needs to open executable file before stack allocation, which means we need to extract the file name before setup_stack. We will pass argvs, argc and total bytes of arguments from tokenization to setup_stack.
+
+1.In load, Pass the cmd lines to strtok_r (). We will count number of arguments, argc,and total bytes of arguments,argv_size, and store arguments into an string array, argv.
+2. Pass argc, argv_size and argvs to setup_stack. Allocate a page of memory for the stack. The beginning address of the arguments in the stack is argv_begin = PHYS_BASE - argv_size.
+
+3. Add padding ‘\0’ between argv_begin and (argv_begin/4 * 4 + 4) for word-alignment.
+
+4. Calculate the beginning address of the stack frame, which is stack_begin = argv_begin - 4*(argc + 1 + 1 + 1 + 1) = argv_begin - 4*argc - 16. (According to the example on spec p. 15, we needs to push addresses of argvs and argc as well as the return address to the stack, in total are argc + 4 words).
+
+5. Check whether the beginning of the stack frame exceeds the allocated page (stack_begin < PHYS_BASE -PGSIZE ?) If yes, free the page allocated at the begining of setup_stack and return error message. Otherwise, allocate the stack in the following way (suppose we have 3 arguments):
+
+argv[3][...]
+argv[2][...]
+argv[1][...]
+argv_begin -->        argv[0][...]
+word-align
+argv[4]
+argv[3]
+argv[2]
+argv[1]
+argv[0]
+argv
+argc
+stack pointer -->     return address
+
+File Operation Syscalls
+=======================
+
+13)  Copy here the declaration of each new or changed `struct' or `struct' member, global or static variable, `typedef', or enumeration for the file operation syscalls.  Identify the purpose of each in 25 words or less.  
+
+In threads/thread.h:
+struct thread {
+	/* These have been defined before. */
+struct wait_status *wait_status; 
+struct list wait_status_list; 
+
+     /* These are added for file operations. */
+
+/* The next file descriptor can be assigned. next_fd = max of current file descriptors + 1. */
+int next_fd;
+
+/* A list of struct fd, representing currently opened files */            
+struct list open_files; 
+}
+
+struct fd
+{
+	/* File descriptor of this opened file. */
+int fd;
+
+/* Pointer to the file struct. */
+struct file *file;
+
+/* List element for the list open_files in struct wait_status. */
+struct list_elem elem;
+
+}
+
+
+14)  Describe how file descriptors are associated with open files in your design.  Are file descriptors unique within the entire OS or just within a single process?
+
+File descriptors are assigned when a new file is opened. File descriptors of a single process increases monotonically, starting from 2. Each process, t, stores the next number of file descriptors that can be assigned in t->next_fd. Files opened by t is stored as a list in t->wait_status->open_files. Since each process assigns file descriptors independently, the file descriptors are unique within a single process.
+
+
+15)  What advantages or disadvantages can you see to your design for file descriptors?
+
+Our file descriptors increase monotonically. Therefore, file descriptors of closed files cannot be reused. This implementation is simple but it limits the number of open/close operations a process can perform. For example, if a process frequently open or close, its file descriptors may reach INT_MAX quickly and next_fd will overflow. 
+
+
+16)  Suppose a system call causes a full page (4,096 bytes) of data to be copied from user space into the kernel.  What is the least and the greatest possible number of inspections of the page table (e.g. calls to pagedir_get_page()) that might result?  What about for a system call that only copies 2 bytes of data?
+
+Full page of data: once because all the data is on the same page.
+2 bytes: 1. if the two bytes are on the same page, once.
+	    2. if the two bytes are on the different pages, twice. 
